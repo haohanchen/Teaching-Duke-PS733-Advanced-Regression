@@ -1,0 +1,304 @@
+---
+title: 'Lab 5: Reproducible Data Analysis and Recitation of Week 1-4 Models'
+author: "Haohan Chen"
+date: "February 9, 2018"
+output: beamer_presentation
+header_includes: 
+  - \usepackage{bm}
+---
+
+```{r setup, include=FALSE}
+  # enable setting font size of code chunk
+  def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+  knitr::knit_hooks$set(chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", 
+           paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  })
+  
+  # knitr options
+  knitr::opts_chunk$set(echo = F, message = FALSE, warning = FALSE, 
+                        results = "hold",
+                        fig.path = "figures/", size = "small")
+  # Explanation in the following chunk -- when fontsize is reduced!
+```
+
+## Agenda
+
+* Reproducible Research (some experience)
+* Short paper I: Idea? Data? Concerns?
+* Likelihood function and MLE
+
+# Reproducible Research
+
+## Reproducible Research (Workflow)
+
+Idea -- Theory -- Empirical Analysis
+
+\begin{itemize}
+\item Idea, data, theory: Think about them at the same time \pause
+\item Is it cheating to look at data when you think about theory? Depends \pause
+\item Exploratory Data Analysis
+    \begin{itemize}
+      \item Correlations
+      \item Shape of pattern
+    \end{itemize}  \pause
+\item Models: from simple to complex
+    \begin{itemize}
+    \item Start with `lm`
+    \item Use complex models to solve remaining problems
+    \item If you can find something ONLY with certain complex models. Don't trust it too much  \pause
+    \end{itemize}
+\item Interpretation of your results: Be honest (to yourself), be confident (in front of the audience)
+\end{itemize}
+
+## Reproducible Research (Pragmatics)
+
+Data -- researchers/ coauthors -- readers
+
+- Organize your folder
+- Clean, extendible code
+- Reproducible (but don't go to far)
+- Allocate time for visualization
+
+## Reproducible Research (Example)
+
+`(see Lab 4 material)`
+
+# Thoughts about your short paper?
+
+# Likelihood
+
+## What is likelihood?
+
+The task: Data meets the Model
+
+\pause
+
+Ex: Female representativeness in the supreme court We have: 
+
+- Data: Number of female judges in the supreme court $y = 2$
+- Model: *assume* $y$ is drawn from a ainomial Distribution
+
+\begin{equation*}
+  P(Y = y \mid \pi) = \binom n y \pi^y (1 - \pi)^{N - y}
+\end{equation*}
+
+\pause
+
+```{r, fig.width=10, fig.height=3, out.width="80%", fig.align="center"}
+par(mfrow = c(1, 3))
+N = 9
+pi = c(0.3, 0.5, 0.8)
+s <- lapply(pi, function(x) rbinom(1000, N, x))
+names(s) = paste0("pi = ", pi)
+for (i in 1:3){
+  hist(s[[i]], main = names(s)[i], xlabe = "y")
+}
+```
+
+
+## What is likelihood?
+
+If, magically, we know the model! Say, $y \sim Binom(N = 9, \pi = 0.5)$, which means equal representativeness between male and female. What is the probability of observing our data?
+
+```{r, fig.width=8, fig.height=6, out.width="80%", fig.align="center"}
+par(mfrow = c(1, 1))
+N = 9
+pi = 0.5
+hist(rbinom(1000, N, pi), main = "Model Binom(N = 9, pi = 0.5); Data y = 2", xlab = "y")
+abline(v = 2, col = "red", lty = 2, lwd = 3)
+```
+
+
+
+## What is likelihood?
+
+But this is not a task we often do. Often, we have data, we have a sketch of a theoretical model (with parameterss). Want: Estimate the parameters. In our Supreme Court example, we want $\pi$.
+
+\pause
+
+$\pi$ is a function of the data and other parameters. We define the ``likelihood of $\pi$''
+\begin{gather*}
+  L(\pi \mid y) = P(Y = y \mid \pi) = \binom n y \pi^y (1 - \pi)^{N - y}
+\end{gather*}
+
+**What is the nature of this likelihood function?**
+
+
+## What is likelihood?
+
+**Can we call the likelihood $L(\pi \mid y)$ ''the probability density of $\pi$ conditional on $y$ ''**
+
+\pause
+
+\vspace{0.5em}
+
+**No.** If $f(x)$ is a probability density function for a continuous random variable $X$ then
+\begin{align*}
+  \text{(1)} & F(x) = Pr(X \leq x) = \int_{-\infty}{x} f(t) dt \\
+  \text{(2)} & f(x) \geq 0 \text{ for any value of x} \\
+  \text{(3)} & \int_{-\infty}^{\infty} f(x) dx = 1
+\end{align*}
+
+\pause 
+
+A likelihood function $L(\pi \mid y)$ need not meet these criteria (e.g. $\int_{-\infty}^{\infty} L(\pi \mid y) d\pi \ne 1$).
+
+It's a function that leads us to some $\pi$ of interest. Nothing more.
+
+
+
+## What is Maximum Likelihood Estimator?
+
+What $\pi$ do we want?
+
+We want an estimated $\hat{\pi}$ that maximizes the likelihood $L(\pi \mid y)$
+
+Why? (my tentative answer) Think of it as maximizing the **joint probability** of observing all your data points given the model you assume
+
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+\begin{gather*}
+  L(\pi \mid y) = \binom n y \pi^y (1 - \pi)^{N - y}
+\end{gather*}
+
+We can simulate this `(see .Rmd code)`
+```{r, fig.width=8, fig.height=6, out.width="70%", fig.align="center"}
+pi = seq(0, 1, 0.01)
+N = 9
+y = 2
+L = choose(N, y) * pi^y * (1 - pi)^(N - y)
+pi_mle <- pi[which(L == max(L))]
+plot(pi, L, "l", lwd = 4, main = "L(pi | y)")
+abline(v = pi_mle, lty = 2, lwd = 4, col = "red")
+```
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+Actually, terms that do not include parameter $\pi$ do not matter 
+
+\begin{gather*}
+  L(\pi \mid y) = \binom n y \pi^y (1 - \pi)^{N - y} \propto \pi^y (1 - \pi)^{N - y}
+\end{gather*}
+
+We can simulate this `(see .Rmd code)`
+```{r, fig.width=8, fig.height=6, out.width="70%", fig.align="center"}
+pi = seq(0, 1, 0.01)
+N = 9
+y = 2
+L = pi^y * (1 - pi)^(N - y) # removed choose(N, y)
+pi_mle <- pi[which(L == max(L))]
+plot(pi, L, "l", lwd = 4, main = "L(pi | y)")
+abline(v = pi_mle, lty = 2, lwd = 4, col = "red")
+```
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+Then, taking the `logarithm` yields the same $\pi_{MLE}$
+
+\begin{align*}
+  \ln L(\pi \mid y) \propto & \ln \left\{\pi^y (1 - \pi)^{N - y} \right\}
+  \propto & y \ln \pi + (1 - y) \ln (1 - \pi)
+\end{align*}
+
+We can simulate this `(see .Rmd code)`
+```{r, fig.width=8, fig.height=6, out.width="70%", fig.align="center"}
+pi = seq(0, 1, 0.01)
+N = 9
+y = 2
+L = y * log(pi) + (N - y) * log(1 - pi) # removed choose(N, y)
+pi_mle <- pi[which(L == max(L))]
+plot(pi, L, "l", lwd = 4, main = "ln(L(pi | y))")
+abline(v = pi_mle, lty = 2, lwd = 4, col = "red")
+```
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+**Why take logarithm?** (1) Likelihood can be very small. (2) A computational problem -- Floating-Point Underflow. Everything goes to zero!
+
+```{r, echo = T, results='markup', size = "footnotesize"}
+a <- 0.01^1000; b <- 0.02^1000
+cat("a = ", a, "; b = ", b, "; a < b?", a < b)
+
+log_a <- sum(rep(log(0.01), 1000))
+log_b <- sum(rep(log(0.02), 1000))
+cat("log(a) = ", log_a, "; log(b) = ", log_b)
+cat("log(a) < log(b)?", log_a < log_b)
+```
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+We can derive MLE analytically
+
+\vspace{25em}
+
+## The Shape of the $L(\pi \mid y)$ and MLE
+
+Many data points? $y = \{ 2, 1, 4, 4, 3, 5 \}$
+
+\begin{gather*}
+  L(\pi \mid y) = \prod_{i}^{n} \binom n y_i \pi^y_i (1 - \pi)^{N - y_i} \propto \prod_{i}{n} \pi^y_i (1 - \pi)^{N - y_i}
+\end{gather*}
+
+\begin{gather*}
+  \ln L(\pi \mid y) \propto \sum_{i}^{n} y_i \ln \pi + (1 - y_i) \ln (1 - \pi)
+\end{gather*}
+
+```{r, fig.width=8, fig.height=6, out.width="40%", fig.align="center"}
+pi = seq(0, 1, 0.01)
+N = 9
+y = c(2, 1, 4, 4, 3, 5)
+L = sapply(pi, function(x) sum(y * log(x) + (N - y) * log(1 - x))) # removed choose(N, y)
+pi_mle <- pi[which(L == max(L))]
+plot(pi, L, "l", lwd = 4, main = "ln(L(pi | y))")
+abline(v = pi_mle, lty = 2, lwd = 4, col = "red")
+```
+
+## Regressions: MLE for Linear Models
+
+Derive MLE for linear models (setup)
+
+## Regressions: MLE for Linear Models
+
+Derive MLE for linear models (likelihood function)
+
+\vspace{25em}
+
+## Regressions: MLE for Linear Models
+
+Derive MLE for linear models (get MLE)
+
+\vspace{25em}
+
+
+## Regressions: MLE for Linear Models
+
+Derive MLE for linear models (get MLE)
+
+\vspace{25em}
+
+## Regressions: OLS for Linear Models
+
+Derive OLS Estimator for linear models
+
+\vspace{25em}
+
+## Regressions: OLS for Linear Models
+
+Derive OLS Estimator for linear models
+
+\vspace{25em}
+
+## Regressions: OLS for Linear Models
+
+Derive OLS Estimator for linear models
+
+\vspace{25em}
+
+## Regressions: OLS for Linear Models
+
+Derive OLS Estimator for linear models
+
+\vspace{25em}

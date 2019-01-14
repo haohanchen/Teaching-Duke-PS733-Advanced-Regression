@@ -1,0 +1,229 @@
+---
+title: "Lab 12"
+author: "Haohan Chen"
+date: "April 6, 2018"
+output: html_document
+---
+
+```{r}
+#-----------------------------
+# load/ install required packages
+#-----------------------------
+pkgs <- c("lme4", "dplyr", "sandwich", "lmtest", "plm")
+
+usePackage <- function(p) 
+{
+  for (pkg in p){
+    if (!is.element(pkg, installed.packages()[,1]))
+      install.packages(pkg, dep = TRUE)
+    require(pkg, character.only = TRUE)
+  }
+}
+usePackage(pkgs)
+```
+
+# Preparation and Descriptive
+
+Basic model specification
+\begin{gather*}
+  lnhr_{it} = \beta lnwg_{it} + \epsilon_{it}
+\end{gather*}
+
+```{r}
+# Load package and data
+rm(list=ls())
+data(LaborSupply)
+data <- LaborSupply
+rm(LaborSupply)
+
+# Transform data
+pdata <- pdata.frame(data, index = c("id", "year"))
+
+# Variation of hour worked
+summary(pdata$lnhr)
+
+# Variation in wage
+summary(pdata$lnwg)
+
+# Purpose: Check the across-time variation is large
+```
+
+# Pooled model
+
+\begin{gather*}
+  y_{it} = \alpha + x_{it} \beta + \epsilon_{it}
+\end{gather*}
+
+```{r}
+# The pooling model. The simpliest model
+m1 <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "pooling")
+summary(m1)
+
+# The same as m1.
+m1_2 <- lm(lnhr ~ lnwg, data = data)
+summary(m1_2)
+```
+
+# Between model estimator
+\begin{gather*}
+  \bar{y}_i = \alpha + \bar{x}_i \beta + \bar{\epsilon}_i
+\end{gather*}
+```{r}
+data %>% group_by(id) %>% summarise_all(funs(mean)) %>% 
+  lm(lnhr ~ lnwg, data = .) %>% summary
+```
+
+# Heterogeneity via individual specific effects
+\begin{gather*}
+  y_{it} = \alpha_i + x_{it} \beta + \epsilon_{it}
+\end{gather*}
+
+We estiamte different variatns of it
+
+- Fixed effecte
+- Random Effect (adding assumption)
+\begin{gather*}
+  \alpha_i \sim N(0, \sigma_\alpha^2)\\
+  \epsilon_{it} \sim N(0, \sigma_\epsilon^2)
+\end{gather*}
+
+## Within: Fixed Effect model
+
+\begin{gather*}
+  y_{it} = \alpha_i + x_{it} \beta + \epsilon_{it} \\
+  \bar{y}_i = \alpha_i + \bar{x}_i \beta + \bar{\epsilon}_{i} \\
+  y_{it} - \bar{y}_i = (x_{it} - \bar{x}_i) \beta + (\epsilon_{it} - \bar{\epsilon}_{i}) \\
+\end{gather*}
+
+```{r}
+# The fixed effect model.
+m2 <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "within")
+summary(m2)
+```
+
+## Within: Fixed Effect with Individual dummies 
+```{r}
+m2b <- lm(lnhr ~ -1 + lnwg + factor(id), data = data)
+summary(m2b)
+```
+
+## Random Effect (linear model)
+```{r}
+m3 <- lmer(lnhr ~ lnwg + (1 | id), data = data)
+summary(m3)
+```
+
+## Random Effect (Generalized Least Square)
+```{r}
+m3b <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "random")
+summary(m3b)
+ercomp(m3b)
+```
+
+## First Differences model
+```{r}
+m4 <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model="fd")
+summary(m4)
+```
+
+# Twoway
+
+## Fixed Effect
+\begin{gather*}
+  y_{it} = \alpha_i + \gamma_t + x_{it} \beta + \epsilon_{it}
+\end{gather*}
+
+```{r}
+m6 <- plm(lnhr ~ lnwg, data = pdata, effect = "twoway", model = "within")
+summary(m6)
+
+# Fixed effect
+summary(fixef(m6, effect = "time", type = "level"))
+# Deviation from mean
+summary(fixef(m6, effect = "time", type = "dmean"))
+
+# Fit it in an naive way
+m6b <- lm(lnhr ~ lnwg + factor(year) + factor(id), data = data)
+summary(m6b)
+```
+
+## Random Effect (GLS)
+```{r}
+m7 <- plm(lnhr ~ lnwg, data = pdata, effect = "twoway", model = "random")
+summary(m7)
+```
+
+### Random Effect (Linear model)
+```{r}
+m7b <- lmer(lnhr ~ lnwg + (1 | id) + (1 | year), data = data)
+summary(m7b)
+```
+
+# Tests
+
+## Individual specific effects
+
+```{r}
+# Recall our pooled model
+summary(m1)
+plmtest(m1, effect = "individual", type = "bp")
+```
+
+`chisq = 2490.1, df = 1, p-value < 2.2e-16`
+
+Reject Null hypothesis that there is no individual specific effect.
+
+## Compare models
+```{r}
+testw1 <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "within")
+pFtest(testw1, m1)
+```
+
+`F = 5.8326, df1 = 531, df2 = 4787, p-value < 2.2e-16`
+
+Reject null hypothesis that time specific effect has 0 coefficients. That is, we need to use the within model -- the more complicated one.
+
+# Hausman Test
+
+Choose between fixed effect and random effect model for panel data.
+```{r}
+fe <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "within")
+re <- plm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "random")
+
+phtest(fe, re) # or phtest(re, fe). doesn't matter which one put first
+```
+
+`chisq = 13.726, df = 1, p-value = 0.0002115`
+Reject the random effect model. "Large test statistics implies rejecting the random effect model"
+
+# Robust Standard Error
+
+```{r}
+coeftest(m2)
+# Get a more "conservative" estimate of standard error.
+# coeftest is from package lmtest. vcovHC is from package sandwich
+coeftest(m2, vcov = vcovHC(m2, method="arellano"))
+```
+
+# Random Coefficient
+\begin{gather*}
+  y_{it} = z_{it} \beta_i + \epsilon_{it} \\
+  \beta_i = \beta + \alpha_i
+\end{gather*}
+
+## FLGS
+```{r}
+vc <- pvcm(lnhr ~ lnwg, data = pdata, effect = "individual", model = "random")
+summary(vc)
+```
+
+## Linear Model
+```{r}
+vcml <- lmer(lnhr ~ lnwg + (1 + lnwg | id), data = data)
+summary(vcml)
+
+# This is what it looks like
+# a column of intercept and a column of varying slope
+# Same as what you see in the previous lab
+head(ranef(vcml)$id)
+```

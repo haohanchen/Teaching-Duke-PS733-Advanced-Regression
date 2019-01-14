@@ -1,0 +1,393 @@
+---
+title: "Hierarchical Models"
+author: "Haohan Chen"
+date: "March 22, 2018"
+output: html_document
+---
+
+```{r, message=FALSE}
+# !! Please run this chunk before you compile the document !!
+
+#-----------------------------
+# install required packages
+#-----------------------------
+pkgs <- c("lme4", "brms", "arm", "ggplot2")
+
+usePackage <- function(p) 
+{
+  for (pkg in p){
+    if (!is.element(pkg, installed.packages()[,1]))
+      install.packages(pkg, dep = TRUE)
+    require(pkg, character.only = TRUE)
+  }
+}
+
+usePackage(pkgs)
+```
+
+# Example: Who Support Trump in 2016 Election?
+
+Data: ANES 2016, version 2017. 
+
+```{r, eval=FALSE, include=FALSE}
+# Some data preprocessing using the raw data. 
+# I've uploaded the cleaned dataset. This is just FYI.
+
+# Data Cleaning
+d <- read.table("anes_timeseries_2016/anes_timeseries_2016_rawdata.txt", header = T, sep = "|")
+
+var <- list()
+
+# Extract variables
+
+# -------------
+# Y
+# -------------
+# Case ID
+  var$V160001 <- d$V160001
+  
+# Turnout: 1. yes; 2. no. -6 no interview
+  var$turnout <- as.numeric(d$V162034 == 1)
+  
+# Vote: 1. Clinton; 2. Trump; -6 no interview
+  var$vote_clinton <- as.numeric(d$V162034a == 1)
+  var$vote_trump <- as.numeric(d$V162034a == 2)
+  
+# Thermometer: -99 refused
+  var$therm_dem_cand <- d$V162078
+  var$therm_dem_cand[var$therm_dem_cand < 0] <- NA
+  var$therm_rep_cand <- d$V162079
+  var$therm_rep_cand[var$therm_rep_cand < 0] <- NA
+# -------------
+# X
+# -------------
+# Demographics
+  # Age: -9 refused
+  var$age <- d$V161267
+  var$age[var$age == -9] <- NA
+  
+  # Marital status
+  var$married <- as.numeric(d$V161268 == 1)
+  
+  # Children
+  var$n_children <- d$V161324
+  var$n_children[var$n_children == -9] <- NA
+  
+  # social class
+    # 1. Lower class 64 213 277
+    # 2. Working class 191 681 872
+    # 3. Middle class 298 1071 1369
+    # 4. Upper class 24 95 119
+    # -1. Inapplicable 596 1013 1609
+    # -8. Don’t know 4 0 4
+    # -9. Refused 4 17 21
+  var$class <- d$V161307
+  
+  # Race
+    # 1. White, non-Hispanic 796 2242 3038
+    # 2. Black, non-Hispanic 120 278 398
+    # 3. Asian, native Hawaiian or
+    # other Pacif Islr,non-Hispanic 30 118 148
+    # 4. Native American or Alaska
+    # Native, non-Hispanic 10 17 27
+    # 5. Hispanic 169 281 450
+    # 6. Other non-Hispanic incl
+    # multiple races <WEB: blank
+    # ’Other’ counted as a race> 52 125 177
+    # -9. Refused 4 29 33
+  var$race <- factor(d$V161310x)
+
+  # Education
+    # 13. Bachelor’s degree (for
+    # example: BA, AB, BS) 265 690 955
+    # 10. Some college but no
+    # degree 205 694 899
+    # 9. High school graduate- high
+    # school diploma or equivalent
+    # (for example: GED) 258 552 810
+    # 14. Master’s degree (for
+    # example: MA, MS, MENG,
+    # MED, MSW, MBA) 120 379 499
+    # 11. Associate degree in
+    # college -
+    # occupational/vocational
+    # program 101 212 313
+    # 12. Associate degree in
+    # college – academic program 83 205 288
+    # 8. 12th grade no diploma 40 67 107
+    # 16. Doctorate degree (for
+    # example: PHD, EDD) 19 74 93
+    # 15. Professional school degree
+    # (for example: MD, DDS,
+    # DVM, LLB, JD) 17 71 88
+    # 7. 11th grade 24 38 62
+    # 6. 10th grade 13 27 40
+    # 5. 9th grade 8 24 32
+    # 95. Other SPECIFY 7 17 24
+    # 4. 7th or 8th grade 8 14 22
+    # -9. Refused 0 15 15
+  var$edu <- d$V161270
+  var$edu[var$edu == -9] <- NA
+# State: address  
+  var$state <- factor(d$V161010e)
+
+d_anes <- as.data.frame(var)
+d_anes <- d_anes[complete.cases(d_anes),]
+save(d_anes, file = "d_anes.Rdata")
+rm(list=ls())
+```
+
+```{r}
+# Load data 
+load("d_anes.Rdata")
+```
+
+# Varying Intercept, Same Slope Across Pools
+
+## Continuous Response: Feeling Thermometer about Republican Candidate
+
+### Pooling
+```{r}
+m.pooled <- lm(therm_rep_cand ~ age + married + edu, data = d_anes)
+summary(m.pooled)
+```
+
+### Un-Pooled
+```{r}
+class(d_anes$state)
+m.unpooled <- lm(therm_rep_cand ~ age + married + edu + state - 1, data = d_anes)
+# Simulate the Fixed Effect (same trick as what we've done)
+summary(m.unpooled)
+length(coef(m.unpooled))
+mu <- coef(m.unpooled)[4:54]
+v <- vcov(m.unpooled)[4:54, 4:54]
+fe_sim <- MASS::mvrnorm(10000, mu = mu, Sigma = v)
+fe_sim_95CI <- as.data.frame(t(apply(fe_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+fe_sim_95CI$state <- substr(row.names(fe_sim_95CI), 6, 7)
+# Plot Fixed Effect
+library(ggplot2)
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from highest to lowest
+fe_sim_95CI$state_ordered <- factor(fe_sim_95CI$state, levels = fe_sim_95CI$state[order(fe_sim_95CI$`50%`)])
+
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+# Anything wierd in this graph?
+  # Check the variance!
+  # Check the number of respondent
+sort(table(d_anes$state))
+fe_sim_95CI$`Few Cases` <- fe_sim_95CI$state %in% names(sort(table(d_anes$state))[1:5])
+
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state_ordered, color = `Few Cases`)) + geom_point(aes(shape = `Few Cases`, size = `Few Cases`)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+fe_sim_95CI$`Few Cases` <- NULL
+# Solution: Hierarchical Model
+```
+
+### Partial Pooling
+
+#### Frequentist Hierarchical Model
+```{r}
+# Fit a Hierarchical model
+m.part_pool <- lmer(therm_rep_cand ~ age + married + edu - 1 + (1|state), data = d_anes)
+summary(m.part_pool)
+
+# Note: $state select the random effect of interest. you have multiple sometimes
+re_sim_95CI <- data.frame(
+  `2.5%` = ranef(m.part_pool)$state + qnorm(0.025) * se.ranef(m.part_pool)$state,
+  `50%` = ranef(m.part_pool)$state,
+  `97.5%` = ranef(m.part_pool)$state + qnorm(0.975) * se.ranef(m.part_pool)$state,
+  state = rownames(ranef(m.part_pool)$state)
+)
+names(re_sim_95CI) <- c("2.5%", "50%", "97.5%", "state")
+
+# Plot
+ggplot(re_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from lowest to highest
+re_sim_95CI$state_ordered <- factor(re_sim_95CI$state, levels = re_sim_95CI$state[order(re_sim_95CI$`50%`)])
+ggplot(re_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+# Compare the two
+combine_re_fe <- rbind(fe_sim_95CI, re_sim_95CI)
+combine_re_fe$type <- rep(c("Unpooled", "Partial-Pooled"), each = 51)
+# Compare Unpooled and Partial-pooled results
+ggplot(combine_re_fe, aes(y = `50%`, x = state, color = type)) + 
+  geom_point(aes(shape = type), position = position_dodge(width = 0.5)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), position = position_dodge(width = 0.5), width = 0.3) + 
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip()
+
+# Compare Unpooled and Partial-pooled results
+ggplot(combine_re_fe, aes(y = `50%`, x = state_ordered, color = type)) + 
+  geom_point(aes(shape = type), position = position_dodge(width = 0.5)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), position = position_dodge(width = 0.5), width = 0.3) + 
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip()
+
+```
+
+#### Bayesian Hierarchical Model
+```{r}
+# BRMS package
+# https://cran.r-project.org/web/packages/brms/vignettes/brms_overview.pdf
+
+m.part_pool_bayes <- brm(therm_rep_cand ~ age + married + edu - 1 + (1|state), data = d_anes,
+                         prior = c(set_prior("normal(0, 2)", class = "b")), family = gaussian(identity),
+                         warmup = 500, iter = 2000, chains = 2,
+                         control = list(adapt_delta = 0.99))
+
+bayes_samp_coef = posterior_samples(m.part_pool_bayes)
+colnames(bayes_samp_coef)
+bayes_sim_95CI <- as.data.frame(t(apply(bayes_samp_coef[, 6:56], 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+bayes_sim_95CI$state <- substr(row.names(bayes_sim_95CI), 9, 10)
+
+# Plot
+ggplot(bayes_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from lowest to highest
+bayes_sim_95CI$state_ordered <- factor(bayes_sim_95CI$state, levels = bayes_sim_95CI$state[order(bayes_sim_95CI$`50%`, decreasing = T)])
+ggplot(bayes_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip() 
+
+
+# Compare 
+combine_re_fe_bayes <- rbind(combine_re_fe, cbind(bayes_sim_95CI, type = "Bayes"))
+
+ggplot(combine_re_fe_bayes, aes(y = `50%`, x = state_ordered, color = type)) + 
+  geom_point(aes(shape = type), position = position_dodge(width = 0.5)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), position = position_dodge(width = 0.5), width = 0.3) + 
+  ylab("Feeling Thermometer (Trump)") + xlab("State") + coord_flip()
+```
+
+
+
+## Categorical Outcome: Voted for Trump
+
+```{r}
+# Load data 
+rm(list=ls())
+load("d_anes.Rdata")
+```
+
+
+### Pooling
+```{r}
+m.pooled <- glm(vote_trump ~ age + married + edu, family = binomial(link = "logit"), data = d_anes)
+summary(m.pooled)
+```
+
+### Un-Pooled
+```{r}
+m.unpooled <- glm(vote_trump ~ age + married + edu + state - 1, family = binomial(link = "logit"), data = d_anes)
+# Simulate the Fixed Effect (same trick as what we've done)
+length(coef(m.unpooled))
+mu <- coef(m.unpooled)[4:54]
+v <- vcov(m.unpooled)[4:54, 4:54]
+fe_sim <- MASS::mvrnorm(10000, mu = mu, Sigma = v)
+fe_sim_95CI <- as.data.frame(t(apply(fe_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+fe_sim_95CI$state <- substr(row.names(fe_sim_95CI), 6, 7)
+# Plot Fixed Effect
+library(ggplot2)
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from highest to lowest
+fe_sim_95CI$state_ordered <- factor(fe_sim_95CI$state, levels = fe_sim_95CI$state[order(fe_sim_95CI$`50%`)])
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+
+# Anything wierd in this graph?
+  # Check the variance!
+  # Check the number of respondent
+sort(table(d_anes$state))
+fe_sim_95CI$`Few Cases` <- fe_sim_95CI$state %in% names(sort(table(d_anes$state))[1:5])
+
+ggplot(fe_sim_95CI, aes(y = `50%`, x = state_ordered, color = `Few Cases`)) + geom_point(aes(shape = `Few Cases`, size = `Few Cases`)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+fe_sim_95CI$`Few Cases` <- NULL
+# Solution: Hierarchical Model
+```
+
+### Partial-Pooling
+
+#### Frequentist
+```{r}
+# Fit a Hierarchical model
+m.part_pool <- glmer(vote_trump ~ age + married + edu - 1 + (1|state), family = binomial(link = "logit"), data = d_anes)
+summary(m.part_pool)
+
+# Note: $state select the random effect of interest. you have multiple sometimes
+re_sim_95CI <- data.frame(
+  `2.5%` = ranef(m.part_pool)$state + qnorm(0.025) * se.ranef(m.part_pool)$state,
+  `50%` = ranef(m.part_pool)$state,
+  `97.5%` = ranef(m.part_pool)$state + qnorm(0.975) * se.ranef(m.part_pool)$state,
+  state = rownames(ranef(m.part_pool)$state)
+)
+names(re_sim_95CI) <- c("2.5%", "50%", "97.5%", "state")
+
+# Plot
+ggplot(re_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from lowest to highest
+re_sim_95CI$state_ordered <- factor(re_sim_95CI$state, levels = re_sim_95CI$state[order(re_sim_95CI$`50%`, decreasing = T)])
+ggplot(re_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+
+# Compare the two
+combine_re_fe <- rbind(fe_sim_95CI, re_sim_95CI)
+combine_re_fe$type <- rep(c("Unpooled", "Partial-Pooled"), each = 51)
+# Compare Unpooled and Partial-pooled results
+ggplot(combine_re_fe, aes(y = `50%`, x = state, color = type)) + 
+  geom_point(aes(shape = type), position = position_dodge(width = 0.5)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), position = position_dodge(width = 0.5), width = 0.3) + 
+  ylab("Coefficient") + xlab("State") + coord_flip()
+
+# Compare Unpooled and Partial-pooled results
+ggplot(combine_re_fe, aes(y = `50%`, x = state_ordered, color = type)) + 
+  geom_point(aes(shape = type), position = position_dodge(width = 0.5)) + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`), position = position_dodge(width = 0.5), width = 0.3) + 
+  ylab("Coefficient") + xlab("State") + coord_flip()
+```
+
+#### Bayesian
+```{r}
+m.part_pool_bayes <- brm(vote_trump ~ age + married + edu - 1 + (1|state), data = d_anes, 
+                         prior = c(set_prior("normal(0, 2)", class = "b")), family = bernoulli(link = "logit"),
+                         warmup = 500, iter = 2000, chains = 2,
+                         control = list(adapt_delta = 0.99))
+
+bayes_samp_coef = posterior_samples(m.part_pool_bayes)
+colnames(bayes_samp_coef)
+# Subset state intervals. Then get 95% CI.
+bayes_sim_95CI <- as.data.frame(t(apply(bayes_samp_coef[, 6:55], 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))))
+bayes_sim_95CI$state <- substr(row.names(bayes_sim_95CI), 9, 10)
+
+# Plot
+ggplot(bayes_sim_95CI, aes(y = `50%`, x = state)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip() 
+
+# Can't compare among states? Sort the level of state: from lowest to highest
+bayes_sim_95CI$state_ordered <- factor(bayes_sim_95CI$state, levels = bayes_sim_95CI$state[order(bayes_sim_95CI$`50%`, decreasing = T)])
+ggplot(bayes_sim_95CI, aes(y = `50%`, x = state_ordered)) + geom_point() + 
+  geom_errorbar(aes(ymin = `2.5%`, ymax = `97.5%`)) +
+  ylab("Coefficient") + xlab("State") + coord_flip()
+```

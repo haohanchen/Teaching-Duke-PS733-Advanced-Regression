@@ -1,0 +1,338 @@
+---
+title: 'Simulation: A Reverse-Engineering Approach to Understand OLS, MLE'
+author: "Haohan Chen"
+date: "February 16, 2018"
+output: pdf_document
+---
+
+## The Big Picture: How Do We Make Predictions?
+
+
+## The setup of a linear model (various notation systems)
+
+
+```{r simData, out.width="50%"}
+# ------------------------------------
+# Simulation for reverse-engineering
+# ------------------------------------
+
+# Parameters about the simulation
+#---------------------------------
+
+# Set N = sample size, k = number of independent variables
+  N <- 1000
+  k <- 5
+# Set random seed so you get the same result every time.
+  set.seed(2.16)
+    
+# We first look at the Systematic component
+#------------------------------------------
+
+# Generate our independent variables X (in a matrix)
+  X <- matrix(NA, nrow = N, ncol = k)
+# Note: no requirement about their distribution
+  # x1 is a continuous variable drawn from normal dist
+  X[, 1] <- rnorm(N, 5, 12)
+  plot(density(X[, 1]))
+  # x2 is a count variable drawn from a binomial dist, N = 10, p = 0.7
+  X[, 2] <- rbinom(N, 10, 0.7)
+  hist(X[, 2])
+  # x3 is another count variable drawn form a poisson dist, mean = 500
+  X[, 3] <- rpois(N, 500)
+  hist(X[, 3])
+  # x4 is a proportion variable drawn form a beta distribution
+  X[, 4] <- rbeta(N, 1, 2)
+  plot(density(X[, 4]))
+  # x5 is a continuous variable drawn form a gamma distribution
+  X[, 5] <- rgamma(N, 3, 5)
+  plot(density(X[, 5]))
+# These are our independent variables, but we are not done yet. add the intercept
+  X <- cbind(rep(1, N), X)
+  
+# What does X look like?
+  colnames(X) <- c("constant", paste0("x", 1:k))
+  head(X)
+# Now, determine the "ground-truth" parameters
+  beta <- c(40, 1, 4, 0.2, 9, 20) # Your choice, make sure length of beta = k  
+  names(beta) <- c("(Intercept)", paste0("x", 1:k))
+# Then determine the systematic component
+  sys_component <- X %*% beta
+  head(sys_component)
+
+# We are done with the systematic component. No assumptions.
+# Now we turn to the stochastic component. I am jumping ahead to make the
+# Gauss-Markov + normality assumption (not required 
+# in the first half of demo about OLS, check lecture slides)
+
+# The Stochastic Component
+# --------------------
+  epsilon <- rnorm(N, 0, 2) # mean = 0, sd = 3
+  stochastic_component <- epsilon
+```
+
+## Getting OLS estimators for linear models
+
+(Whiteboard demo)
+
+```{r}
+# --------------------------------------------------
+# Put together a simulated dataset for linear models
+# -------------------------------------------------
+
+# Y for linear relation
+# -------------------------
+  Y <- sys_component + stochastic_component
+
+# Voila: we are done simulating for a linear model. Think about this
+# We observe only Y and X, while not observing beta, epsilon. like this
+  data_linear <- data.frame(Y = Y, X)
+  head(data_linear)
+# I want to separate out a few samples to demo prediction so I just
+# Get a slice out of the complete dataset
+# You heard about "training" and "test" set. But let's not discuss it now
+  data_new <- data_linear[1:10, ]
+  data_fit <- data_linear[-(1:10), ]
+  head(data_new)
+  head(data_fit) # we use this to fit the model
+```
+
+
+```{r}
+# --------------------------------------------
+# Get OLS estimators for the simulated data
+# --------------------------------------------
+
+# Fit the model
+# -----------------
+# You've done it a million times with R funciton. I suppose
+  m_ols <- lm(Y ~ x1 + x2 + x3 + x4 + x5, data = data_fit)
+  coef(m_ols) # The estimated coefficient
+  beta # The "ground truth"
+# You find from above the estimated beta is almost the "ground truth"
+# So you know it's working
+
+# Inference (uncertainty of beta's)
+-----------------------------------
+# Variance in estimation?
+  vcov(m_ols)
+# Simulate beta to get conficence interval of your coefficients
+  N_sim <- 10000 # note: a different thing from N defined above
+  library(MASS) # library for the mvrnorm function
+  beta_sim <- mvrnorm(N_sim, mu = coef(m_ols), Sigma = vcov(m_ols))
+  head(beta_sim)
+# Get summary statistics of this sample
+  beta_confint95 <- apply(beta_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))
+  beta_confint95
+# Plot the distribution of beta's
+  par(mfrow = c(2, ceiling((k+1)/2)))
+  for (i in 1:ncol(beta_sim)){
+    plot(density(beta_sim[, i]), 
+         main = paste(paste0("beta", i-1), "for", colnames(beta_sim)[i]))
+    abline(v = mean(beta_sim[, i]), col = "red", lty = 2, lwd = 2)
+  }
+# Plot coefficients (my way... feel free to do it in another way)
+  beta_confint95_2 <- as.data.frame(t(beta_confint95))
+  beta_confint95_2$variable <- row.names(beta_confint95_2)
+  names(beta_confint95_2)
+  library(ggplot2)
+  ggplot(beta_confint95_2, aes(y = `50%`, x = variable)) + geom_point() + 
+    geom_linerange(aes(ymin = `2.5%`, ymax = `97.5%`))
+  # Some are very small, because not at the same scale.
+  
+# Prediction (uncertainty about a new y)
+# -----------------------------------------
+# Task: you have a new x (vector), you want to know what the corresponding y is
+  head(data_new)
+# Let's take one of them
+  x_new <- data_new[1, c("constant", paste0("x", 1:k))]
+  x_new
+# Challenge: What one of the x to be certain value?
+  
+# Want: y_new ~ N(mu_y_new, sigma_y). 
+# When we predict, we get a distribution, not one number
+  
+  # First we get mu_y_new: harder part
+  mu_y_new <- as.matrix(x_new, byrow = T) %*% t(beta_sim)
+  dim(mu_y_new) # It's a vector of 10000 sample of predicted y
+  mu_y_new <- as.vector(mu_y_new) # just to clean up. transform it into a vector
+  mu_y_new[1:30] # See how it looks like
+  
+  # Then we get sigma_y. easy
+  sigma_y <- sigma(m_ols)
+  # Want it by hand (using week 2 page 11 formula)
+  sigma_y <- sqrt((t(residuals(m_ols)) %*% residuals(m_ols)) / 
+    (N - (k + 1)))
+  
+# Then, simulate y_new useing this list of mu_y_new
+  y_new <- rnorm(100000, mu_y_new, sigma_y)
+  
+# We are done with prediction! You have predicted y_new. Plot it, summarise it
+  quantile(y_new, c(0.025, 0.5, 0.975)) # 95% confidence interval
+  par(mfrow = c(1, 1))
+  plot(density(y_new), main = "Distribution of y_new")
+  abline(v = mean(y_new), col = "red", lty = 2, lwd = 3)
+  
+# Expected new y? Simply take the mean!
+  mean(y_new) # this is your expected value
+        
+# Now, challenge: do it without using lm().
+  est_beta_manual <- solve(t(X) %*% X) %*% t(X) %*% Y
+  est_beta_manual
+  e <- Y - X %*% est_beta_manual
+  # a bit different because we remove 10 cases for the prediction task
+  est_beta_vcov <- as.numeric((t(e) %*% e) / (N - (k + 1))) * solve(t(X) %*% X)
+  est_beta_vcov
+```
+
+## MLE estimator for linear model
+
+(Whiteboard demo)
+
+```{r}
+# Fit the model
+  m_mle <- glm(Y ~ x1 + x2 + x3 + x4 + x5, data = data_fit, family = "gaussian")
+# Get estimated beta
+  coef(m_mle)
+  beta
+# Get variance of the estimation
+  vcov(m_mle)
+
+# Inference
+# ------------
+  # (exercise)
+  
+# Predictions
+# ------------
+  # (exercise)
+
+```
+
+## Modeling Dicotomous Outcome Using Generalized Linear Model: Setup
+
+(Whiteboard demonstration)
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+# Just copy pasting. should've made it a function. pressed for time.
+
+# Parameters about the simulation (nothing to do with the model)
+#----------------------------------------------------------------
+
+# Set N = sample size, k = number of independent variables
+  N <- 10000
+  k <- 5
+# Set random seed so you get the same result every time.
+  set.seed(2.16)
+    
+# We first look at the Systematic component
+#------------------------------------------
+
+# Generate our independent variables X (in a matrix)
+  X <- matrix(NA, nrow = N, ncol = k)
+# Note: no requirement about their distribution
+  # x1 is a continuous variable drawn from normal dist
+  X[, 1] <- rnorm(N, 2, 12)
+  plot(density(X[, 1]))
+  # x2 is a count variable drawn from a binomial dist, N = 10, p = 0.7
+  X[, 2] <- rbinom(N, 3, 0.7)
+  hist(X[, 2])
+  # x3 is another count variable drawn form a poisson dist, mean = 500
+  X[, 3] <- rpois(N, 2)
+  hist(X[, 3])
+  # x4 is a proportion variable drawn form a beta distribution
+  X[, 4] <- rbeta(N, 1, 2)
+  plot(density(X[, 3]))
+  # x5 is a continuous variable drawn form a gamma distribution
+  X[, 5] <- rgamma(N, 3, 5)
+  plot(density(X[, 4]))
+# These are our independent variables, but we are not done yet. add the intercept
+  X <- cbind(rep(1, N), X)
+  
+# What does X look like?
+  colnames(X) <- c("constant", paste0("x", 1:k))
+  head(X)
+# Now, determine the "ground-truth" parameters
+  beta <- c(0.02, 0.01, 0.04, 0.02, 0.09, 0.05) # Your choice, make sure length of beta = k  
+  names(beta) <- c("(Intercept)", paste0("x", 1:k))
+# Then determine the systematic component
+  sys_component <- X %*% beta
+  head(sys_component)
+
+# We are done with the systematic component. No assumptions.
+# Now we turn to the stochastic component. I am jumping a head to make the
+# Gauss-Markov + normality assumption (not required 
+# in the first half of demo about OLS, check lecture slides)
+
+# The Stochastic Component
+# --------------------
+  epsilon <- rnorm(N, 0, 0.001) # mean = 0, sd = 3
+  stochastic_component <- epsilon
+```
+
+```{r}
+# -----------------------------------
+# Set up the simulated dataset
+# -----------------------------------
+
+# The probabilities with a logistic link
+  pi_logit <- 1 / (1 + exp(-sys_component))
+# The probabilities with a probit link
+  pi_probit <- pnorm(sys_component)
+
+set.seed(1)
+# The outcome y of a logit link
+  y_logit <- sapply(pi_logit, function(x) rbinom(1, 1, x))
+  table(y_logit)
+# The outcome y of a probit link
+  y_probit <- sapply(pi_probit, function(x) rbinom(1, 1, x))
+  table(y_probit)
+  
+# Dataset
+  data_logit <- data.frame(Y = y_logit, X)
+  data_probit <- data.frame(Y = y_probit, X)
+```
+
+## MLE Estimator (Logit)
+```{r}
+# -----------------------------------
+# Fit the model
+# -----------------------------------
+m_logit <- glm(Y ~ x1 + x2 + x3 + x4 + x5, data = data_logit, family = binomial(link = "logit"))
+coef(m_logit)
+beta
+
+# -----------------------------------
+# Inference (exercise)
+# -----------------------------------
+
+# -----------------------------------
+# Prediction (exercise)
+# -----------------------------------
+
+```
+
+
+## MLE Estimator (Probit)
+
+```{r}
+# -----------------------------------
+# Fit the model
+# -----------------------------------
+m_probit <- glm(Y ~ x1 + x2 + x3 + x4 + x5, data = data_logit, family = binomial(link = "probit"))
+coef(m_probit)
+beta
+
+vcov(m_probit)
+
+# -----------------------------------
+# Inference (exercise)
+# -----------------------------------
+
+# -----------------------------------
+# Prediction (exercise)
+# -----------------------------------
+
+```

@@ -1,0 +1,323 @@
+---
+title: "PS733 Homework 1 Q&A"
+author: "Haohan Chen"
+date: "February 19, 2018"
+output: pdf_document
+---
+
+## How to make make prediction with a linear model?
+
+I demonstrate this by a mini analysis on a dataset I randomly generate. 
+
+```{r, echo = FALSE}
+library(xtable)
+options(xtable.comment = F)
+```
+
+```{r, echo = FALSE}
+# ----------------------------------------------
+# I create a data set for demonstration purpose
+# ----------------------------------------------
+
+# Set N = sample size, k = number of independent variables
+  N <- 30
+  k <- 1
+# Set random seed so you get the same result every time.
+  set.seed(2.16)
+# Generate our independent variables X (in a matrix)
+  X <- matrix(NA, nrow = N, ncol = k)
+  # x1 is a continuous variable drawn from normal dist
+  X[, 1] <- rnorm(N, 5, 12)
+# These are our independent variables, but we are not done yet. add the intercept
+  X <- cbind(rep(1, N), X)
+# What does X look like?
+  colnames(X) <- c("constant", paste0("x", 1:k))
+# Now, determine the "ground-truth" parameters
+  beta <- c(3, 1.5) # Your choice, make sure length of beta = k+1  
+  names(beta) <- c("(Intercept)", paste0("x", 1:k))
+
+# Then determine the systematic component
+  sys_component <- X %*% beta
+# The Stochastic Component
+  epsilon <- rnorm(N, 0, 0.5) # mean = 0, sd = 3
+  stochastic_component <- epsilon
+
+# Y for linear relation
+# ----------------------
+  Y <- sys_component + stochastic_component
+
+# Combine X and Y into a data frame
+# ---------------------------------
+  d_linear <- data.frame(Y = Y, X)
+```
+
+The table below shows the data.
+
+```{r, echo = FALSE, results = "asis"}
+  xtable(d_linear)
+```
+
+Now I fit two linear model $y_i = \beta_0 + \beta_1 x_{i1} + \epsilon_i \quad \epsilon_i \sim N(0, \sigma^2)$, one with an Ordinary Least Square Estimator, another with an Maximum Likelihood Estimator.
+
+### OLS Inference and Prediction
+
+```{r}
+m_ols <- lm(Y ~ x1, data = d_linear)
+summary(m_ols)
+```
+
+Now, how do we predict the level of $Y$ at the 10th percentile of the $x_1$? As I demonstrated in the lab, we need to:
+\begin{enumerate}
+  \item Get the estimated coefficients using the `coef()` function
+  \item Get the Variance-Covariance Matrix using the `vcov()` function. If you wonder what this is, it describes the variance of our estimated beta's (how certain we are about our estimated coefficients), and the covariance among beta's.
+  \item Simulate a sample of the estimated coefficients (if your goal is hypothesis testing, wich you probably have done a lot, you stop here).
+  \item Use (1) the simulated distribution of the coefficients AND; (2) the estimated Sigma retrieved with the `Sigma()` function AND (2) the 10th quantile $x_1$ to simulate a sample of the predicted $Y$
+\end{enumerate}
+
+Here's how to code this:
+```{r}
+# STEP 1: Get the estimated coefficients
+beta_est <- coef(m_ols)
+# STEP 2: Get the variance-covariance matrix
+beta_vcov <- vcov(m_ols)
+# STEP 3: Simulate a sample of the estimated coefficient
+beta_sim <- MASS::mvrnorm(10000, beta_est, beta_vcov)
+# Aside: We can get the confidence intervals of our coefficients from here
+apply(beta_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))
+# The result from simulation (above), should be very closed to results we get
+# from the confint() function.
+confint(m_ols)
+
+# Now we have the simulated distribution of the coefficients, we need 
+# (1) The estimated sigma (variance of the regression)
+sigma <- sigma(m_ols)
+print(sigma)
+
+# (2) the i'th quantile x_i. That is, we need our x_new
+  # Note: Don't forget the intercept!
+x_new_10q <- c(`(Intercept)` = 1, x1 = as.numeric(quantile(d_linear$x1, 0.10)))
+print(x_new_10q)
+
+# STEP 4: Simulate the predicted Y.
+Y_pred_10q <- rnorm(100000, x_new_10q %*% t(beta_sim), sigma)
+  # An alternative way to code this simulation (slower, but more intuitive)
+  # Y_pred_10q <- apply(beta_sim, 1, function(x) rnorm(1000, sum(x_new_10q * x), sigma))
+
+# Analysis of the outcome: The 95% Confidence Interval
+quantile(Y_pred_10q, c(0.025, 0.5, 0.975))
+# Plot the distribution and the mean
+plot(density(Y_pred_10q))
+abline(v = mean(Y_pred_10q), lty = 2, col = "red")
+
+# Q: "Can I use the `predict` function?" Yes. But make sure you use get the predictive interval
+predict(m_ols, newdata = data.frame(rbind(x_new_10q)), interval = "prediction")
+# But I strongly suggest you understand the above simulation method, because --
+# when you work on more complex dataset, the predict function is less flexible than
+# the type of task you need. This will be a powerful tool.
+```
+
+\clearpage
+
+### Linear MLE inference and prediction
+
+Below I fit a linear model with Maximum Likelihood Estimator. Note the choice of family for the `GLM` function is by default `gaussian`, that is, a linear model. Remember to specify the family when you are not fitting a linear model.
+```{r}
+m_mle <- glm(Y ~ x1, data = d_linear, family = "gaussian")
+summary(m_mle)
+```
+
+The way I do prediction is almost identical to that of OLS, because the two packages provide the same set of functions. **Note: ** The `predict` function for GLM models does not offer a convenient option for you to get the predictive interval. So just use the simulation method. 
+```{r}
+# STEP 1: Get the estimated coefficients
+beta_est <- coef(m_mle)
+# STEP 2: Get the variance-covariance matrix
+beta_vcov <- vcov(m_mle)
+# STEP 3: Simulate a sample of the estimated coefficient
+beta_sim <- MASS::mvrnorm(10000, beta_est, beta_vcov)
+# Aside: We can get the confidence intervals of our coefficients from here
+apply(beta_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))
+# The result from simulation (above), should be very closed to results we get
+# from the confint() function.
+confint(m_mle)
+
+# Now we have the simulated distribution of the coefficients, we need 
+# (1) The estimated sigma (variance of the regression)
+sigma <- sigma(m_mle)
+print(sigma)
+
+# (2) the i'th quantile x_i. That is, we need our x_new
+  # Note: Don't forget the intercept!
+x_new_10q <- c(`(Intercept)` = 1, x1 = as.numeric(quantile(d_linear$x1, 0.10)))
+print(x_new_10q)
+
+# STEP 4: Simulate the predicted Y.
+Y_pred_10q <- rnorm(100000, x_new_10q %*% t(beta_sim), sigma)
+  # An alternative way to code this simulation (slower, but more intuitive)
+  # Y_pred_10q <- apply(beta_sim, 1, function(x) rnorm(1000, sum(x_new_10q * x), sigma))
+
+# Analysis of the outcome: The 95% Confidence Interval
+quantile(Y_pred_10q, c(0.025, 0.5, 0.975))
+# Plot the distribution and the mean
+plot(density(Y_pred_10q))
+abline(v = mean(Y_pred_10q), lty = 2, col = "red")
+
+# Q: "Can I use the `predict` function?" It's not going to be much helful for GLM...
+predict(m_mle, newdata = data.frame(rbind(x_new_10q)))
+# This is because the GLM family models does not offer a convenient way to get the predictive interval
+# So go with simulation!
+```
+
+\clearpage
+
+## Predictive Probability at certain level of $x$
+
+Again, I create a dataset with binary outcome $Y$ to demonstrate this.
+
+```{r, echo = FALSE}
+rm(list=ls())
+# ----------------------------------------------
+# I create a data set for demonstration purpose
+# ----------------------------------------------
+# Set N = sample size, k = number of independent variables
+  N <- 30
+  k <- 2
+# Set random seed so you get the same result every time.
+  set.seed(2.16)
+# Generate our independent variables X (in a matrix)
+  X <- matrix(NA, nrow = N, ncol = k)
+  # x1 is a continuous variable drawn from normal dist
+  X[, 1] <- rnorm(N, 5, 12)
+  # x2 is a count variable 1-5 drawn from a binomial dist, N = 10, p = 0.7
+  X[, 2] <- rbinom(N, 4, 0.7)
+# These are our independent variables, but we are not done yet. add the intercept
+  X <- cbind(rep(1, N), X)
+# What does X look like?
+  colnames(X) <- c("constant", paste0("x", 1:k))
+# Now, determine the "ground-truth" parameters
+  beta <- c(0.1, 0.1, 0.2) # Your choice, make sure length of beta = k+1  
+  names(beta) <- c("(Intercept)", paste0("x", 1:k))
+
+# Then determine the systematic component
+  sys_component <- X %*% beta
+# Y logit
+# ----------------------
+  set.seed(1)
+  Y <- rbinom(N, 1, 1 / (1 + exp(-sys_component)))
+  
+# Combine X and Y into data frame
+# -------------------------------
+  d_logit <- data.frame(Y = Y, X)
+```
+
+Below I show the first 30 observations of the generated dataset. $Y$ is a binary outcome.
+
+```{r, results = "asis"}
+xtable(d_logit)
+```
+
+### Predicted probability
+First we fit a logit model:
+```{r}
+m_logit <- glm(Y ~ x1 + x2, data = d_logit, family = binomial(link = "logit"))
+summary(m_logit)
+```
+
+### Want Predictive Probability for $x_2 = 2$ and average $x_1$. 
+
+```{r}
+# STEP 1: Get the estimated coefficients
+beta_est <- coef(m_logit)
+# STEP 2: Get the variance-covariance matrix
+beta_vcov <- vcov(m_logit)
+# STEP 3: Simulate a sample of the estimated coefficient
+beta_sim <- MASS::mvrnorm(10000, beta_est, beta_vcov)
+# Aside: We can get the confidence intervals of our coefficients from here
+apply(beta_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))
+# The result from simulation (above), should be very closed to results we get
+# from the confint() function.
+confint(m_logit)
+# Mind your interpretation of the coefficients. Talk about it later.
+
+# Now we have the simulated distribution of the coefficients, we need 
+# (1) The estimated sigma (variance of the regression)
+sigma <- sigma(m_logit)
+print(sigma)
+
+# (2) define new x: x2 = 2; x1 = mean(x1)
+  # Note: Don't forget the intercept!
+x_new <- c(`(Intercept)` = 1, x1 = mean(d_logit$x1), x2 = 2)
+print(x_new)
+
+# STEP 4: Simulate the predicted Y.
+Y_pred <- 1 / (1 + exp(- rnorm(100000, x_new %*% t(beta_sim), sigma)))
+  # An alternative way to code this simulation (slower, but more intuitive)
+  # Y_pred_10q <- apply(beta_sim, 1, function(x) rnorm(1000, sum(x_new_10q * x), sigma))
+
+# Analysis of the outcome: The 95% Confidence Interval
+quantile(Y_pred, c(0.025, 0.5, 0.975))
+# Plot the distribution and the mean
+plot(density(Y_pred))
+abline(v = median(Y_pred), lty = 2, col = "red")
+
+# Q: "Can I use the `predict` function?" Won't be helpful either. See linear MLE explanation
+predict(m_logit, newdata = data.frame(rbind(x_new)))
+# Note: the GLM family models does not offer a convenient way to get the predictive interval
+# So go with simulation!
+```
+
+If you want the predictive probability for all $x_2 \in \{1, 2, 3, 4, 5\}$, simply repeat the above simulation five times, changing the value of $x_2$.
+
+#### Want: How Predictive Probability Change along $x_1$, when $x_2 = 2$
+
+This is a little bit more challenging than above, because $x_1$ is continuous. So you need to get a sequence of $x_1$ to show the change of $Y$ along $x_1$.
+
+```{r, fig.width=10, fig.height=8, out.width="100%"}
+# STEP 1: Get the estimated coefficients
+beta_est <- coef(m_logit)
+# STEP 2: Get the variance-covariance matrix
+beta_vcov <- vcov(m_logit)
+# STEP 3: Simulate a sample of the estimated coefficient
+beta_sim <- MASS::mvrnorm(10000, beta_est, beta_vcov)
+# Aside: We can get the confidence intervals of our coefficients from here
+apply(beta_sim, 2, function(x) quantile(x, c(0.025, 0.5, 0.975)))
+# The result from simulation (above), should be very closed to results we get
+# from the confint() function.
+confint(m_logit)
+# Mind your interpretation of the coefficients. Talk about it later.
+
+# Now we have the simulated distribution of the coefficients, we need 
+# (1) The estimated sigma (variance of the regression)
+sigma <- sigma(m_logit)
+print(sigma)
+
+# (2) define new x: x2 = 2; x1 = a sequence of x1 from min to max
+  # Note: Don't forget the intercept!
+  # Note: I take a sequence of x1 with interval 1. adjust it to fit your data
+x1_seq <- seq(min(d_logit$x1), max(d_logit$x1), 0.5)
+x_new <- cbind(`(Intercept)` = 1, x1 = x1_seq, x2 = 2)
+
+# STEP 4: Simulate the predicted Y. for the whole sequence of x1
+
+# !! Below are some data cleaning to make create a data format working with ggplot
+# !! It's probably not the most efficient way though. Let me know if you have better idea.
+Y_pred <- as.data.frame(
+  t(apply(x_new, 1, function(x) 1 / (1 + exp(- rnorm(500, x %*% t(beta_sim), sigma)))))
+  )
+Y_pred$x1 <- x1_seq
+# Reshape the dataset for plotting
+Y_pred2 <- reshape2::melt(Y_pred, id.vars = "x1")
+Y_pred_mean <- data.frame(Y_pred_m = apply(Y_pred[, 1:(ncol(Y_pred)-1)], 1, mean),
+                          x1 = x1_seq)
+Y_pred3 <- merge(Y_pred2, Y_pred_mean, by = "x1")
+
+library(ggplot2)
+ggplot(Y_pred3) + 
+  geom_smooth(aes(x = x1, y = value, group = variable), 
+              method = "loess", se = F, color = "gray") +
+  geom_smooth(aes(x = x1, y = Y_pred_m, group = variable), 
+              method = "loess", se = F, color = "black") +
+  guides(color = F) +
+  xlab("x1") + ylab("Predicted Probability") +
+  ggtitle("Predictive Probability y = f(X1 = x1 | x2 = 2)")
+# Of course you can plot the predictive interval as ribbon etc.
+```

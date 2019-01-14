@@ -1,0 +1,496 @@
+---
+title: "`Rmarkdown` for Data Analysis: A Refresher"
+author: "Haohan Chen^[Political Science Department, Duke University. haohan.chen@duke.edu]"
+date: "February 2, 2018"
+fontsize: 11pt
+geometry: margin=1cm
+linkcolor: blue
+output: 
+  pdf_document:
+    number_sections: false
+    keep_tex: true
+    fig_caption: true
+    citation_package: natbib
+header-includes:
+#  - \usepackage{TikZ}
+#  - \usepackage{times}
+---
+
+
+This is a refresher of some common `Rmarkdown` operations, to help you editing your homework and papers more efficiently for PS733. I demonstrate it by writing a mini data analysis report on a toy dataset.
+
+# `Rmarkdown` Setup
+
+```{r setup}
+  # enable setting font size of code chunk
+  def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+  knitr::knit_hooks$set(chunk = function(x, options) {
+    x <- def.chunk.hook(x, options)
+    ifelse(options$size != "normalsize", 
+           paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+  })
+  
+  # knitr options
+  knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, 
+                        results = "hold",
+                        fig.path = "figures/", size = "small")
+  # Explanation in the following chunk -- when fontsize is reduced!
+```
+
+```{r setup2}
+#-----------------------------
+# About the Header
+#-----------------------------
+  # keep_tex: output the tex file (so that you can directly use the tex code generated)
+  # fig_caption: show caption of figures. true by default.
+  # citation_package: use latex natbib citation package for bibliography. recommended!
+  # header_includes: include other command the document's preamble.
+  #                  mostly used it to call more LaTeX packages.
+#-----------------------------
+# Global options
+#-----------------------------
+  # About the font size mess
+    # A trick that enables you to custimize the fontsize of code in the chunk.
+    # I have to do this because Rmarkdown does not directly support setting
+
+  # About knitr::opt_chunk
+    # echo: show code
+    # message, warning: show system generated info (e.g. progress bar)
+    # results = "hold". hold output of results till the end of chunk (invalid for fig)
+    # fig.path: set a path to store figures generate. can reuse them elsewhere.
+    #           without this, no fig will be saved.
+    # size: font size of *code in the chunks* (not your main text, which is set
+    #       in the header "fontsize: 11pt". options of size include "small", "tiny",
+    #       "normalisize", "huge"...
+
+  # Also, Create a directory to save your tables (used later)
+  dir.create("tables")
+  # Output type of this file is LaTex (a param for later)
+  out_type = "latex"
+```
+
+# Packages and Dataset Setup
+
+```{r package}
+#-----------------------------
+# load/install required packages
+#-----------------------------
+# Names of all packages used
+  pkgs <- c("dplyr", "ggplot2", "xtable", "stargazer", "PerformanceAnalytics", "cowplot")
+# A function to load all above packages. Install if they have not been installed.
+  usePackage <- function(p){
+    for (pkg in p){
+      if (!is.element(pkg, installed.packages()[,1]))
+        install.packages(pkg, dep = TRUE, repos = "https://cloud.r-project.org/")
+      require(pkg, character.only = TRUE)
+    }
+  }
+  usePackage(pkgs)
+```
+
+```{r loaddata}
+#-----------------------------
+# load your data
+#-----------------------------
+  # Load your dataset of interest. 
+  # Below is an example economic dataset coming with R
+    data("longley")
+      # J. W. Longley (1967) An appraisal of least-squares programs from 
+      # the point of view of the user. 
+      # Journal of the American Statistical Association 62, 819-841.
+  # Just to mess up the dataset by a bit
+    names(longley) <- c("gnp.def", "gnp", "unemp", "force", "pop", "yr", "emp")
+```
+
+\clearpage
+
+# Exploratory Data Analysis
+
+Table \ref{tab:desc} shows the descriptive statistics. Figure \ref{fig:corrmat} is the Correlation Matrix. Figure \ref{fig:force-and-gnp1} shows the relationship between GNP and the size of armed force using the default `plot` function. Figure \ref{fig:force-and-gnp2} is the same plot using `ggplot`. 
+
+## Table
+
+```{r edatab1}
+#---------------------------
+# Table of summary statistics
+#---------------------------
+  # Summary statistics
+    summary(longley)  
+    # Not pretty. We can do better!
+```
+
+```{r edatab2, results='asis'}
+#-------------------------------------
+# Table of summary statistics (con'd)
+#-------------------------------------
+  # Produce a LaTeX summary stats table (can also be HTML)
+  stargazer(longley, title = "Descriptive Statistics",
+      mean.sd = TRUE, median = TRUE, iqr = TRUE, min.max = TRUE,
+      header = FALSE, label = "tab:desc", type = out_type)
+    # Will come back to Stargazer soon.
+```
+
+### Tip: Save your Table
+I recommend saving your table in a separate `.tex` file for convenient re-use.
+```{r edatab3, results='hide'}
+  # Instead of directly output your outcome. 
+  # Saving the output is a better strategy. Think about why.
+  desc_tab <- capture.output(
+    stargazer(longley, title = "Descriptive Statistics",
+        mean.sd = TRUE, median = TRUE, iqr = TRUE, min.max = TRUE,
+        header = FALSE, label = "tab:desc", type = out_type)
+    )
+  # Save it to a folder for tables (created earlier)
+  writeLines(desc_tab, "tables/descriptive.tex")    
+```
+
+\input{tables/descriptive}
+
+<!-- Note: text within these two symbols are "comment", not included in either the text or the code. -->
+<!-- Note: if you use "\include", it will put the table in a new page --> 
+
+\clearpage
+
+## Correlcation Matrix
+```{r cormat, fig.width=8, fig.height=6, fig.align='center', out.width="100%", fig.pos="h!", fig.cap="\\label{fig:corrmat}Correlation Matrix"}
+#---------------------------
+# Correlation Matrix
+#---------------------------
+  PerformanceAnalytics::chart.Correlation(longley)
+  # By far my favorite, better than other fancy stuff.
+  # Perfect for continuous variables
+```
+
+## Correlation Plots (and their arrangement)
+
+```{r cor1, fig.cap="\\label{fig:force-and-gnp1}Size of Armed Force and GNP (default)", fig.width=8, fig.height=4, fig.align='center', out.width="90%", fig.pos="h!"}
+par(mfrow = c(1, 2)) # 2 figures in a row
+plot(longley$gnp, longley$force, xlab = "GNP", ylab = "Size of Armed Force", main = "GNP")
+plot(log(longley$gnp), longley$force, xlab = "log(GNP)", ylab = "Size of Armed Force", 
+     main = "log(GNP)")
+```
+
+```{r cor2, fig.width=8, fig.height=4, fig.align='center', out.width="90%", fig.pos="h!", fig.cap="\\label{fig:force-and-gnp2}Size of Armed Force and GNP (ggplot)"}
+# The cowplot package: https://cran.r-project.org/web/packages/cowplot/vignettes/plot_grid.html
+fig_cor1 <- ggplot(longley, aes(x = gnp, y = force)) + geom_point() + 
+  geom_smooth(method = "loess") + xlab("GNP") + ylab("Size of Armed Force") +
+  ggtitle("GNP")
+fig_cor2 <- ggplot(longley, aes(x = log(gnp), y = force)) + geom_point() + 
+  geom_smooth(method = "loess") + xlab("GNP") + ylab("Size of Armed Force") +
+  ggtitle("log(GNP)")
+plot_grid(fig_cor1, fig_cor2, ncol = 2)
+```
+
+
+\clearpage
+
+# Models
+
+Clearly state your model and the assumption of the model.
+
+(Alignment Style 1:)
+\begin{gather*}
+  \text{Model 1: } \quad \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i + \epsilon_i \\
+  \text{Model 2: } \quad \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i + \beta_3 \text{Population}_i + \epsilon_i \\
+  \text{Model 3: } \quad \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i  + \beta_3 \text{GNP}_i^2 + \beta_4 \text{Population}_i + \epsilon_i \\
+  \text{Model 4: } \quad \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i  + \beta_3 \text{GNP}_i^2 + \beta_4 \text{Population}_i + \beta_5 \text{Year}_i + \epsilon_i \\
+  \text{For all models, I assume }  \epsilon \sim N(0, \sigma^2)
+\end{gather*}
+
+(Alignment Style 2:)
+\begin{align*}
+  \text{Model 1: } & \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i + \epsilon_i \\
+  \text{Model 2: } & \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i + \beta_3 \text{Population}_i + \epsilon_i \\
+  \text{Model 3: } & \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i  + \beta_3 \text{GNP}_i^2 + \beta_4 \text{Population}_i + \epsilon_i \\
+  \text{Model 4: } & \text{Armed Force}_i = \beta_0 + \beta_1 \text{Unemployment}_i + \beta_2 \text{GNP}_i  + \beta_3 \text{GNP}_i^2 + \beta_4 \text{Population}_i + \beta_5 \text{Year}_i + \epsilon_i
+\end{align*}
+\begin{equation*}
+  \text{For all models, I assume } \epsilon \sim N(0, \sigma^2)
+\end{equation*}
+
+```{r fit}
+#---------------------------
+# Fit models
+#---------------------------
+  # Tips: store a group of model in a list
+  # Benefits: convenient management! 
+  fit_models <- function(d){
+    m <- list()
+    m[["Baseline"]] <- glm(force ~ unemp + gnp, data = d, family = gaussian)
+    m[["Population"]] <- glm(force ~ unemp + gnp + pop, data = d, family = gaussian)
+    m[["Quad Population"]] <- glm(force ~ unemp + gnp + I(gnp^2) + pop, data = d, 
+                                  family = gaussian)
+    m[["Year"]] <- glm(force ~ unemp + gnp + I(gnp^2) + pop + yr, data = d, 
+                       family = gaussian)
+    m
+  }
+
+  m <- fit_models(longley)
+```
+
+\clearpage
+
+# Results (Tables)
+
+Table \ref{tab:arm1} reports all models with no labels. Table \ref{tab:arm2} reports part of the models. Table \ref{tab:arm3} label the variables, reset the number of digits to report etc.
+
+```{r table, results='asis'}
+# Stargazer Quick Reference: https://www.jakeruss.com/cheatsheets/stargazer/
+# Alternative: xtable. More flexible, but harder to code.
+    # https://cran.r-project.org/web/packages/xtable/vignettes/xtableGallery.pdf
+
+#-------------------------------------
+# Show regression results with tables
+#-------------------------------------
+  # Print all models
+    stargazer(m, label = "tab:arm1", 
+              title = 
+                "(All Models) Economic Determinants of the Size of Armed Force",
+              header = FALSE, type = out_type)
+      # If you input a list of models, it will report them all in one table.
+      # Remember to add label and title to your table. 
+      # A table of ambiguous meaning is not worth reporting
+
+  # Print a subset of models
+    stargazer(m[["Baseline"]], m[["Population"]], label = "tab:arm2", 
+              title = 
+                "(Baseline and Population) Economic Determinants of the Size of Armed Force",
+              header = FALSE, type = out_type)
+
+  # Label your Table (Essential!!!)
+    stargazer(m, label = "tab:arm3",
+              title = "(Labeled) Economic Determinants of the Size of Armed Force",
+              covariate.labels = c("Unemployment", "GNP",
+                                   "GNP sq", "Population", "Year"),
+                # Mind the order... Better Strategy is asigning meaningful var names
+                # in the dataset. Will end up saving your time!
+              dep.var.labels = "Size of Armed Force",
+              digits = 2,
+              ci = TRUE,
+              star.cutoffs = NA, # don't show stars
+              notes = "Source of Data: Longley (1967)",
+              font.size = "footnotesize", # Font size
+              header = FALSE, type = out_type
+              )
+```
+
+\clearpage
+
+# Regression Results (Graphs)
+
+**This part is muted by default because of the long time it takes to install the package.**
+
+Figure \ref{fig:coef1a} and \ref{fig:coef1b} plots the coefficients with unscaled predictors. Figure \ref{fig:coef2a} and \ref{fig:coef2b} plot the coefficients with  scaled predictors. The interpretation of the coefficients are different after scaling. Before scaling: "one unit change of `variable x` is associated with `coef` units change of the dependent variables". After scaling: "one standard deviation change of `variable x` is associated with `coef` units change of the dependent variables".
+
+In addition, Figure \ref{fig:slope} shows how the dependent variable changes in response to all four independent variables in our `Year` Model.
+
+\textcolor{red}{\textbf{ALL THESE FIGURES ARE TERRIBLE, BECAUSE THEY ARE NOT CORRECTLY LABELED!!}} So I would still recommend using `ggplot` for your visualization, where you enjoy higher flexibility. 
+
+```{r}
+# Show the code in the appdx, but do not run them again.
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+```{r figcoef1, fig.width=6, fig.height=5, fig.align='center', out.width="50%", fig.cap="\\label{fig:coef1a}Coefficients with Unscaled Predictors (one model)", fig.pos="h"}
+
+# Experimenting a good visualization package.
+# Takes a long time to install. And there's been error report
+# Save your other R files. When you are ready to try, set the above
+# eval = TRUE
+usePackage("sjPlot")
+
+#---------------------------
+# Visualize Regression Results
+#---------------------------
+  # sjPlot: http://www.strengejacke.de/sjPlot/; 
+  #         https://cran.r-project.org/web/packages/sjPlot/vignettes/sjpglm.html
+  #         https://github.com/strengejacke/sjPlot
+  # Pros: Can work with models generated by different packages
+  #       lmer, glm, glmm, glmer, etc.
+  #       it's plot appears much better than many default plot functions.
+  # Cons: Not flexible compared to ggplot. Package under development. Use with caution.
+
+  #------------------------------
+  # Coefficients (original data)
+  #------------------------------
+    # Plotting one model
+    sjPlot::plot_model(m[["Year"]], 
+                       title = "Economic Determinants of Armed Force Size I")
+```
+
+```{r figcoef2, fig.width=6, fig.height=5, fig.align='center', out.width="50%", fig.cap="\\label{fig:coef1b}Coefficients with Unscaled Predictors (all models)"}
+    # Comparing multiple models
+    sjPlot::plot_models(m, title = "Economic Determinants of Armed Force Size II")
+    # Note. Scale problem --> can't really see CI of most variables.
+
+    # Solution: scale independentvariables before input. BUT DON'T SCALE THE DVs!
+```
+
+```{r figcoef3, fig.width=6, fig.height=5, fig.align='center', out.width="50%", fig.cap="\\label{fig:coef2a}Coefficients with Scaled Predictors (one model)"}
+  #-----------------------------------------------
+  # Coefficients (scaled Independent variables)
+  #-----------------------------------------------
+    longley_s <- longley %>% mutate(gnp = scale(gnp), unemp = scale(unemp),
+                                    pop = scale(pop), yr = scale(yr))
+    m <- NULL
+    m <- fit_models(longley_s)
+    # Plotting one model
+    sjPlot::plot_model(m[["Year"]], 
+                       title = "Economic Determinants of Armed Force Size I (Scaled)")
+```
+
+```{r figcoef4, fig.width=6, fig.height=5, fig.align='center', out.width="50%", fig.cap="\\label{fig:coef2b}Coefficients with Scaled Predictors (all models)"}
+    # Comparing multiple models
+    sjPlot::plot_models(m, title = "Economic Determinants of Armed Force Size II (Scaled)")
+    # Something is wrong with this command. Still need a fix.
+```    
+
+```{r figslope, fig.width=8, fig.height=6, fig.align='center', out.width="80%", fig.cap="\\label{fig:slope}How the Dependent Variable Change with All Predictors"} 
+  #-----------------------------------------------
+  # Other Plots
+  #-----------------------------------------------
+    sjPlot::plot_model(m[["Year"]], type = "slope")
+      # Again. package under developement. 
+      # Don't trust it too much. Esp. the Variance.
+      # Good for perliminary analysis
+```
+
+\clearpage
+
+# Discussion
+
+All results are summarized in Table \ref{tab:arm3}... bla bla bla
+
+# Citation
+
+```{r, echo=FALSE, eval=TRUE}
+# I just generate a .bib file (inline citation is a pain) in the same folder as the .Rmd code with this chunk. 
+# Substitute it with your real bibliography file.
+# Remember. NO SPECIAL CHARACTER in your .bib file. Ideally only a-z,A-Z
+bib_text <- '
+  @article{stegmueller2013many,
+  title={How many countries for multilevel modeling? A comparison of frequentist and Bayesian approaches},
+  author={Stegmueller, Daniel},
+  journal={American Journal of Political Science},
+  volume={57},
+  number={3},
+  pages={748--761},
+  year={2013},
+  publisher={Wiley Online Library}
+  }
+
+  @article{johnston2014ideology,
+  title={Ideology, the Affordable Care Act Ruling, and Supreme Court Legitimacy},
+  author={Johnston, Christopher D and Hillygus, D Sunshine and Bartels, Brandon L},
+  journal={Public Opinion Quarterly},
+  volume={78},
+  number={4},
+  pages={963--973},
+  year={2014},
+  publisher={Oxford University Press UK}
+  }
+  
+  @book{beramendi2008democracy,
+  title={Democracy, Inequality, and Representation in Comparative Perspective},
+  author={Beramendi, Pablo and Anderson, Christopher J},
+  year={2008},
+  publisher={Russell Sage Foundation}
+  }
+
+  @article{bell2015explaining,
+  title={Explaining fixed effects: Random effects modeling of time-series cross-sectional and panel data},
+  author={Bell, Andrew and Jones, Kelvyn},
+  journal={Political Science Research and Methods},
+  volume={3},
+  number={1},
+  pages={133--153},
+  year={2015},
+  publisher={Cambridge University Press}
+  }
+'
+writeLines(bib_text, "biblio.bib")
+
+```
+
+Bla bla bla \citep{johnston2014ideology}. 
+
+\citet[][p.234]{beramendi2008democracy} argue that... 
+
+Existing studies find evidence that bla bla bla \citep[see][for detailed explanation]{stegmueller2013many,bell2015explaining}...
+
+\bibliography{biblio}
+
+\clearpage
+
+# Others (Analytical Graphs, Game Trees...)
+
+`Rmarkdown` allows you to use all LaTex packages (put `header_includes: \usepackage{} in in the header at the start of the document`). For example, you can plot analytical graphs (functions, game trees etc.) with the `TikZ` packages. See more examples here:\newline
+`http://www.sfu.ca/~haiyunc/notes/Game_Trees_with_TikZ.pdf`;\newline `https://sites.google.com/site/kochiuyu/Tikz`.
+
+<!--
+## Example: Utility Maximization
+
+\begin{center}
+\begin{tikzpicture}[scale=0.6]
+  % from https://sites.google.com/site/kochiuyu/Tikz
+  \draw[thick,<->] (0,10) node[above]{$y$}--(0,0)--(10,0) node[right]{$x$};
+  \node [below left] at (0,0) {$0$};
+  \node [below] at (5,0) {$x^{*}$};
+  \node [left] at (0,5) {$y^{*}$};
+  \draw(1,9)--(9,1) node[right]{$p_xx+p_yy=I$};
+  \draw(0,5)--(5,5)--(5,0);
+  \draw(2,10) ..controls (3.33,6) and (6,3.33) .. (10,2) node[right]{$U(x,y)=U_0$};
+\end{tikzpicture}
+\end{center}
+
+## Example: A Simple Sequential Game
+\begin{center}
+\begin{tikzpicture}[scale=1.5,font=\footnotesize]
+  % from http://www.sfu.ca/~haiyunc/notes/Game_Trees_with_TikZ.pdf
+  \tikzstyle{solid node}=[circle,draw,inner sep=1.5,fill=black]
+  \tikzstyle{hollow node}=[circle,draw,inner sep=1.5]
+  \tikzstyle{level 1}=[level distance=15mm,sibling distance=3.5cm]
+  \tikzstyle{level 2}=[level distance=15mm,sibling distance=1.5cm]
+  \tikzstyle{level 3}=[level distance=15mm,sibling distance=1cm]
+  \node(0)[solid node,label=above:{$P1$}]{}
+  child{node[solid node,label=above left:{$P2$}]{}
+  child{node[hollow node,label=below:{$(1,2)$}]{} edge from parent node[left]{$C$}}
+  child{node[hollow node,label=below:{$(1,-1)$}]{} edge from parent node[left]{$D$}}
+  child{node[hollow node,label=below:{$(0,2)$}]{} edge from parent node[right]{$E$}}
+  edge from parent node[left,xshift=-5]{$A$}
+  }
+  child{node[solid node,label=above right:{$P2$}]{}
+  child{node[hollow node,label=below:{$(2,2)$}]{} edge from parent node[left]{$F$}}
+  child{node[hollow node,label=below:{$(1,3)$}]{} edge from parent node[right]{$G$}}
+  edge from parent node[right,xshift=5]{$B$}
+};
+\end{tikzpicture}
+\end{center}
+
+\clearpage
+-->
+
+# Appendix (Code)
+
+For readability, you may suppress your code within your text, and put them all into the appendix. You can re-use a chunk of code by calling `ref.label=(chunck_name)`. When you reuse a chunk, you may want to avoid running again by setting `eval=FALSE`. Again, you can set these up as a global option with the `knitr::opts_chunck` command.
+
+```{r setupapdx}
+# Show the code in the appdx, but do not run them again.
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Loading the Data
+```{r apdx1, ref.label="loaddata"}
+```
+
+## Generating a Correlation Matrix
+```{r apdx2, ref.label="cormat"}
+```
+
+## Fitting Models
+```{r apdx3, ref.label="fit"}
+```
+
+## Presenting Results in Tables
+```{r apdx4, ref.label="table"}
+```
