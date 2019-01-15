@@ -10,8 +10,8 @@
 
 [Lab 7 Prediction in Logit and Probit Models](../../tree/master/07-Predict-Logit-Visualize): How to predict and get uncertainty of our prediction for Logit and Probit model? We use a simulation approach again. Don't count on build-in functions of the `glm` package. There's quite a lot of coding here.
 
-[Lab 8 Multinomial Data](../../tree/master/08-Multinomial-Data): Appropriate models when outcomes are categorical. Simulation of confidence intervals of coefficients. Simulation of predictive intervals.
+[Lab 8 Multinomial Data](../../tree/master/08-Multinomial-Data): Appropriate models when outcomes are categorical. Simulation of confidence intervals of coefficients. Simulation of predictive intervals. It contains a (quite challenging) homework assignment (designed by Prof. Stegmueller) and its solution key (written by Haohan Chen). The assignment ask you to analyze a dataset of opinion poll in the UK.
 
 [Lab 10 Hierarchical Model](../../tree/master/10-Hierarchical-Model): Multi-level models. When to use random effect or fixed effect? Why? How about Bayesian approach? Demonstrated with new ANES data of attitudes about Trump.
 
-[Lab 12 Panel Data](../../tree/master/12-Panel-Data): Time series. This tutorial just discuss some simpliest models in this family. It's basically an extension of hierarchical modeling discussed in the previous section.
+[Lab 12 Panel Data](../../tree/master/12-Panel-Data): Data collected over time. This section discusses some simpliest models in this family. It's basically an extension of hierarchical modeling discussed in the previous section.
