@@ -8,7 +8,7 @@
 
 [Lab 6 Get confidence interval through simulation](../../tree/master/06-Simulateion-OLS-Logit-Probit): How to approximate distributions of estimated coefficients in Logit and Probit models with a simulation approach?
 
-[Lab 7 Prediction in Logit and Probit Models](../../tree/master/07-Predict-Logit-Visualize): How to get prediction and its uncertainty in Logit and Probit model with a simulation approach? Don't count on build-in functions of the `glm` package. There's quite a lot of coding here.
+[Lab 7 Prediction in Logit and Probit Models](../../tree/master/07-Predict-Logit-Visualize): How to predict and get uncertainty of our prediction for Logit and Probit model? We use a simulation approach again. Don't count on build-in functions of the `glm` package. There's quite a lot of coding here.
 
 [Lab 8 Multinomial Data](../../tree/master/08-Multinomial-Data): Appropriate models when outcomes are categorical. Simulation of confidence intervals of coefficients. Simulation of predictive intervals.
 
